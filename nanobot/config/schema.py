@@ -250,6 +250,7 @@ class ExecToolConfig(Base):
     """Shell exec tool configuration."""
 
     timeout: int = 60
+    command_wrapper: str = ""
 
 
 class MCPServerConfig(Base):
