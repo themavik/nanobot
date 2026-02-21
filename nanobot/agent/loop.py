@@ -130,6 +130,12 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
+        # Skill tools (from skill.py files in workspace/builtin skills)
+        from nanobot.agent.skills import SkillsLoader
+        skills_loader = SkillsLoader(self.workspace)
+        for skill_tool in skills_loader.load_skill_tools():
+            self.tools.register(skill_tool)
+
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
         if self._mcp_connected or self._mcp_connecting or not self._mcp_servers:
