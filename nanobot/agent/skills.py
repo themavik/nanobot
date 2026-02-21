@@ -1,10 +1,17 @@
 """Skills loader for agent capabilities."""
 
+import importlib.util
 import json
 import os
 import re
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from loguru import logger
+
+if TYPE_CHECKING:
+    from nanobot.agent.tools.skill import SkillFunctionTool
 
 # Default builtin skills directory (relative to this file)
 BUILTIN_SKILLS_DIR = Path(__file__).parent.parent / "skills"
@@ -226,3 +233,50 @@ class SkillsLoader:
                 return metadata
         
         return None
+
+    def load_skill_tools(self) -> "list[SkillFunctionTool]":
+        """Load Python functions from skill.py files and wrap as tools."""
+        from nanobot.agent.tools.skill import SkillFunctionTool
+
+        tools: list[SkillFunctionTool] = []
+        seen_names: set[str] = set()
+
+        for search_dir in (self.workspace_skills, self.builtin_skills):
+            if not search_dir or not search_dir.exists():
+                continue
+            for skill_dir in search_dir.iterdir():
+                if not skill_dir.is_dir():
+                    continue
+                skill_py = skill_dir / "skill.py"
+                if not skill_py.exists():
+                    continue
+                skill_name = skill_dir.name
+                if skill_name in seen_names:
+                    continue
+                seen_names.add(skill_name)
+
+                meta = self._get_skill_meta(skill_name)
+                if not self._check_requirements(meta):
+                    logger.debug(f"Skipping skill {skill_name}: unmet requirements")
+                    continue
+
+                try:
+                    spec = importlib.util.spec_from_file_location(
+                        f"nanobot_skill_{skill_name}", str(skill_py)
+                    )
+                    if spec is None or spec.loader is None:
+                        continue
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    for attr_name in dir(mod):
+                        if attr_name.startswith("_"):
+                            continue
+                        attr = getattr(mod, attr_name)
+                        if callable(attr) and not isinstance(attr, type):
+                            tools.append(
+                                SkillFunctionTool(skill_name, attr, attr_name)
+                            )
+                except Exception as e:
+                    logger.warning(f"Failed to load skill {skill_name}: {e}")
+
+        return tools
